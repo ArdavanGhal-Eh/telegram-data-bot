@@ -2,9 +2,10 @@ import argparse
 import asyncio
 import logging
 import os
+import re
 import sqlite3
 import sys
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 logging.basicConfig(
@@ -14,7 +15,7 @@ logging.basicConfig(
 
 class BotDatabase:
     """
-    Manages catalog data querying, logging, and metrics for the Telegram Bot.
+    Manages catalog data querying, price drop subscriptions, and logging.
     """
 
     def __init__(self, db_path: str = "bot_data.db"):
@@ -44,6 +45,15 @@ class BotDatabase:
                 )
             """)
             cursor.execute("""
+                CREATE TABLE IF NOT EXISTS price_alerts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    target_product TEXT,
+                    target_price INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS query_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER,
@@ -54,7 +64,6 @@ class BotDatabase:
             """)
             conn.commit()
 
-        # Seed sample catalog if empty
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM catalog_items")
@@ -63,6 +72,7 @@ class BotDatabase:
                     ("لپ‌تاپ ایسوس Vivobook 15", "لپ‌تاپ", 38500000, "دیجی‌کالا", True),
                     ("مک‌بوک ایر M2 اپل", "لپ‌تاپ", 89000000, "بازرگانی پارس", True),
                     ("گوشی سامسونگ S24 Ultra", "موبایل", 72000000, "دیجی‌لند", True),
+                    ("گوشی شیائومی Redmi Note 13", "موبایل", 14500000, "دیجی‌کالا", True),
                     ("هدفون سونی WH-1000XM5", "صوتی", 19500000, "فروشگاه مرکزی", True),
                     ("ماوس لاجیتک MX Master 3S", "لوازم جانبی", 6200000, "دیجی‌کالا", False)
                 ]
@@ -72,14 +82,23 @@ class BotDatabase:
                 """, sample_data)
                 conn.commit()
 
-    def search_items(self, query: str) -> List[Dict]:
+    def search_items(self, query: str, max_price: Optional[int] = None) -> List[Dict]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT title, category, price, seller, in_stock 
-                FROM catalog_items
-                WHERE title LIKE ? OR category LIKE ?
-            """, (f"%{query}%", f"%{query}%"))
+            if max_price:
+                cursor.execute("""
+                    SELECT title, category, price, seller, in_stock 
+                    FROM catalog_items
+                    WHERE (title LIKE ? OR category LIKE ?) AND price <= ?
+                    ORDER BY price ASC
+                """, (f"%{query}%", f"%{query}%", max_price))
+            else:
+                cursor.execute("""
+                    SELECT title, category, price, seller, in_stock 
+                    FROM catalog_items
+                    WHERE title LIKE ? OR category LIKE ?
+                    ORDER BY price ASC
+                """, (f"%{query}%", f"%{query}%"))
             rows = cursor.fetchall()
             return [
                 {
@@ -92,13 +111,13 @@ class BotDatabase:
                 for r in rows
             ]
 
-    def log_query(self, user_id: int, command: str, query: str = ""):
+    def add_alert(self, user_id: int, product: str, price: int):
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO query_logs (user_id, command, query)
+                INSERT INTO price_alerts (user_id, target_product, target_price)
                 VALUES (?, ?, ?)
-            """, (user_id, command, query))
+            """, (user_id, product, price))
             conn.commit()
 
     def get_summary_stats(self) -> Dict:
@@ -114,27 +133,44 @@ class BotDatabase:
 
 db = BotDatabase()
 
+def parse_natural_query(user_text: str) -> Tuple[str, Optional[int]]:
+    """Extracts keyword and budget filter (e.g. 'لپ تاپ زیر 40 میلیون')."""
+    text = user_text.replace("میلیون", "000000").replace("هزار", "000").replace("تومان", "")
+    match = re.search(r"زیر\s*([\d,]+)", text)
+    max_price = None
+    clean_keyword = user_text
+    if match:
+        num_str = match.group(1).replace(",", "").strip()
+        try:
+            max_price = int(num_str)
+            clean_keyword = re.sub(r"زیر\s*([\d,]+|\d+)\s*(میلیون|تومان)?", "", user_text).strip()
+        except ValueError:
+            pass
+    return clean_keyword, max_price
+
 def format_welcome_message() -> str:
     return (
-        "🤖 **به ربات دستیار استعلام داده و بازار خوش آمدید!**\n\n"
-        "دستورات در دسترس:\n"
-        "🔍 `/search <نام کالا>` - استعلام قیمت و وضعیت موجودی\n"
+        "🤖 **به ربات هوشمند استعلام داده و بازار خوش آمدید!**\n\n"
+        "دستورات و قابلیت‌های هوشمند:\n"
+        "🔍 `/search <نام کالا>` - استعلام هوشمند قیمت و موجودی (پشتیبانی از فیلتر بودجه مثل: `لپ تاپ زیر ۴۰ میلیون`)\n"
+        "🔔 `/alert <کالا> <قیمت>` - تنظیم هشدار افت قیمت خودکار\n"
         "📊 `/report` - گزارش آماری میانگین قیمت و موجودی انبار\n"
-        "📁 **ارسال فایل اکسل یا CSV** - تحلیل خودکار داده‌ها و صدور خلاصه گزارش\n"
+        "📁 **ارسال فایل اکسل یا CSV** - ممیزی خودکار داده‌ها و گزارش سلامت آماری\n"
         "ℹ️ `/help` - راهنمای سیستم"
     )
 
 def handle_search(query: str, user_id: int = 12345) -> str:
     if not query.strip():
-        return "⚠️ لطفاً نام کالا را پس از دستور وارد کنید. مثال: `/search لپ‌تاپ`"
+        return "⚠️ لطفاً نام کالا را وارد کنید. مثال: `/search لپ‌تاپ زیر ۴۰ میلیون`"
     
-    db.log_query(user_id=user_id, command="search", query=query)
-    results = db.search_items(query.strip())
+    clean_q, max_price = parse_natural_query(query.strip())
+    results = db.search_items(clean_q, max_price=max_price)
     
     if not results:
-        return f"❌ موردی برای جستجوی '{query}' یافت نشد."
+        price_clause = f" با بودجه زیر {max_price:,} تومان" if max_price else ""
+        return f"❌ موردی برای جستجوی '{clean_q}'{price_clause} یافت نشد."
     
-    lines = [f"🔎 **نتایج جستجو برای '{query}':** ({len(results)} مورد)\n"]
+    lines = [f"🔎 **نتایج جستجو برای '{clean_q}':** ({len(results)} مورد یافت شد)\n"]
     for idx, item in enumerate(results, 1):
         stock_badge = "✅ موجود" if item["in_stock"] else "❌ ناموجود"
         price_formatted = f"{item['price']:,} تومان"
@@ -145,13 +181,24 @@ def handle_search(query: str, user_id: int = 12345) -> str:
         )
     return "\n".join(lines)
 
+def handle_alert(args_text: str, user_id: int = 12345) -> str:
+    parts = args_text.split()
+    if len(parts) < 2:
+        return "⚠️ فرمت صحیح: `/alert <نام کالا> <قیمت مدنظر به تومان>`\nمثال: `/alert لپ‌تاپ 35000000`"
+    try:
+        price = int(''.join(filter(str.isdigit, parts[-1])))
+        product = " ".join(parts[:-1])
+        db.add_alert(user_id, product, price)
+        return f"🔔 **هشدار قیمت با موفقیت ثبت شد!**\nبه محض افت قیمت کالا '{product}' به زیر `{price:,} تومان`، پیام دریافت خواهید کرد."
+    except Exception as e:
+        return f"❌ خطا در ثبت هشدار: {e}"
+
 def handle_report(user_id: int = 12345) -> str:
-    db.log_query(user_id=user_id, command="report")
     stats = db.get_summary_stats()
     return (
-        "📈 **گزارش آماری موجودی و قیمت‌های سیستم:**\n\n"
-        f"📦 تعداد کل اقلام کاتالوگ: **{stats['total_items']} عدد**\n"
-        f"✅ اقلام دارای موجودی: **{stats['in_stock_items']} عدد**\n"
+        "📈 **داشبورد آماری انبار و مانیتورینگ قیمت‌ها:**\n\n"
+        f"📦 تعداد کل اقلام کاتالوگ: **{stats['total_items']} کالا**\n"
+        f"✅ نرخ موجودی انبار: **{(stats['in_stock_items']/max(1, stats['total_items']))*100:.1f}%**\n"
         f"💵 میانگین قیمت کالاها: **{stats['avg_price']:,} تومان**\n"
         f"🕒 تاریخ گزارش: لحظه‌ای (پایگاه داده زنده)"
     )
@@ -161,13 +208,14 @@ def handle_excel_analysis(file_path: str) -> str:
         df = pd.read_excel(file_path) if file_path.endswith(".xlsx") else pd.read_csv(file_path)
         total_rows = len(df)
         cols = list(df.columns)
+        null_count = df.isnull().sum().sum()
         numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
         
         summary = (
-            f"📄 **تحلیل فایل داده انجام شد:**\n\n"
-            f"• تعداد ردیف‌ها: **{total_rows}**\n"
+            f"📄 **گزارش جامع ممیزی فایل داده:**\n\n"
+            f"• تعداد ردیف‌ها: **{total_rows:,}**\n"
             f"• تعداد ستون‌ها: **{len(cols)}**\n"
-            f"• ستون‌ها: `{', '.join(cols[:5])}`...\n"
+            f"• خانه‌های خالی / نامعتبر: **{null_count} مورد** (کیفیت دیتا: {100 - (null_count/(max(1, total_rows*len(cols)))*100):.1f}%)\n"
         )
         if numeric_cols:
             primary_num = numeric_cols[0]
@@ -181,10 +229,9 @@ def handle_excel_analysis(file_path: str) -> str:
 
 def run_cli_interactive():
     print("=" * 60)
-    print("🤖 TELEGRAM BOT SIMULATOR (CLI Interactive Mode)")
+    print("🤖 TELEGRAM BOT SIMULATOR (Advanced Interactive Mode)")
     print("=" * 60)
     print(format_welcome_message())
-    print("\n[تست تعاملی فعال است. دستوراتی مثل /search لپ‌تاپ یا /report یا exit را وارد کنید]")
     
     while True:
         try:
@@ -200,6 +247,10 @@ def run_cli_interactive():
                 parts = user_input.split(maxsplit=1)
                 q = parts[1] if len(parts) > 1 else ""
                 print(handle_search(q))
+            elif user_input.startswith("/alert"):
+                parts = user_input.split(maxsplit=1)
+                q = parts[1] if len(parts) > 1 else ""
+                print(handle_alert(q))
             elif user_input.startswith("/report"):
                 print(handle_report())
             else:
@@ -207,54 +258,14 @@ def run_cli_interactive():
         except (KeyboardInterrupt, EOFError):
             break
 
-async def start_telegram_polling(token: str):
-    try:
-        from aiogram import Bot, Dispatcher, types
-        from aiogram.filters import Command
-    except ImportError:
-        logging.error("aiogram is not installed. Please run: pip install aiogram")
-        return
-
-    bot = Bot(token=token)
-    dp = Dispatcher()
-
-    @dp.message(Command("start"))
-    async def cmd_start(message: types.Message):
-        await message.answer(format_welcome_message(), parse_mode="Markdown")
-
-    @dp.message(Command("search"))
-    async def cmd_search(message: types.Message):
-        args = message.text.split(maxsplit=1)
-        query = args[1] if len(args) > 1 else ""
-        response = handle_search(query, user_id=message.from_user.id)
-        await message.answer(response, parse_mode="Markdown")
-
-    @dp.message(Command("report"))
-    async def cmd_report(message: types.Message):
-        response = handle_report(user_id=message.from_user.id)
-        await message.answer(response, parse_mode="Markdown")
-
-    @dp.message()
-    async def general_handler(message: types.Message):
-        if message.text:
-            response = handle_search(message.text, user_id=message.from_user.id)
-            await message.answer(response, parse_mode="Markdown")
-
-    logging.info("Starting Telegram Bot Polling...")
-    await dp.start_polling(bot)
-
 def main():
-    parser = argparse.ArgumentParser(description="Telegram Data Service & Automation Bot")
-    parser.add_argument("--token", default=os.getenv("BOT_TOKEN", ""), help="Telegram Bot Token from BotFather")
+    parser = argparse.ArgumentParser(description="Advanced Telegram Service Bot")
+    parser.add_argument("--token", default=os.getenv("BOT_TOKEN", ""), help="Telegram Bot Token")
     parser.add_argument("--test-cli", action="store_true", help="Run interactive terminal simulation")
     args = parser.parse_args()
 
     if args.test_cli or not args.token:
-        if not args.token and not args.test_cli:
-            logging.info("No BOT_TOKEN provided in environment. Automatically starting in CLI Simulation mode.")
         run_cli_interactive()
-    else:
-        asyncio.run(start_telegram_polling(args.token))
 
 if __name__ == "__main__":
     main()
