@@ -1,73 +1,25 @@
-# 🤖 Telegram Data Service & Business Automation Bot
+# 🤖 Polyglot Telegram Data Service & Bot (Python + TypeScript)
 
-An asynchronous, lightweight Telegram bot developed in Python using `aiogram` and `SQLite`. Designed for Iranian businesses, online shops, and teams to provide instant product catalog search, inventory queries, and automated spreadsheet analytics.
+A hybrid bot architecture combining a **TypeScript edge webhook receiver** with an **asynchronous Python analytics & search core**.
 
----
+## 🌟 Polyglot Architecture
+- **TypeScript Webhook Gateway (`typescript_webhook_gateway/`):** Ultra-fast HTTP handler for zero-cold-start webhook processing.
+- **Python Bot Core (`bot.py`):** Business logic, catalog search, and spreadsheet analytics.
 
-## 🌟 Key Features
-- **Instant Product Search:** Query product titles, current pricing, inventory status, and vendor names with fast SQLite full-text lookup (`/search <query>`).
-- **Live Inventory & Pricing Reports:** Provides aggregate metrics on total catalog count, average market prices, and in-stock percentages (`/report`).
-- **Spreadsheet Analysis:** Automated parsing and statistical summary of uploaded `.xlsx` or `.csv` files using `pandas`.
-- **Zero-Dependency CLI Simulator:** Includes an interactive terminal simulation mode so anyone can evaluate the bot's conversation logic without creating a live Telegram bot.
+## 🎯 Real-World Applications & Cross-Industry Impact
+### ⚙️ E-Commerce & Retail
+- Instant inventory lookup, budget filtering, and price-drop alerts.
+### 🌐 Cross-Industry & Software
+- Cloud event dispatching for DevOps alarms and server health monitoring.
 
----
-
-## 🚀 Installation & Setup
-
-1. **Clone repository:**
-   ```bash
-   git clone https://github.com/your-username/telegram-data-bot.git
-   cd telegram-data-bot
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Configure Bot Token:**
-   - Copy `.env.example` to `.env`:
-     ```bash
-     cp .env.example .env
-     ```
-   - Obtain a bot token from [@BotFather](https://t.me/BotFather) and insert it into `.env`.
-
----
-
-## 💻 Usage
-
-### 1. Run live Telegram Bot:
+## 🚀 Execution
 ```bash
-python bot.py --token "YOUR_TELEGRAM_BOT_TOKEN"
+# TypeScript Gateway:
+cd typescript_webhook_gateway && node src/server.ts
+
+# Python Core:
+pip install -r requirements.txt && python bot.py
 ```
-
-### 2. Run CLI Simulator Mode (No Token Required):
-```bash
-python bot.py --test-cli
-```
-*Try typing: `/search لپ‌تاپ`, `/report`, or `/help`*
-
----
-
-## 💬 Command Reference
-| دستور (Command) | کاربرد (Function) |
-| :--- | :--- |
-| `/start` | نمایش پیام خوش‌آمدگویی و منوی راهنما |
-| `/search <کالا>` | جستجوی بلادرنگ قیمت و موجودی کالا در انبار |
-| `/report` | دریافت گزارش آماری میانگین قیمت‌ها و وضعیت موجودی |
-| ارسال فایل اکسل | استخراج تعداد ردیف‌ها، میانگین و بیشینه ستون‌های عددی |
-
----
-
-## 🛠️ Tech Stack
-- **Framework:** Python 3.10+, `aiogram` (v3)
-- **Database:** `sqlite3`
-- **Data Analytics:** `pandas`, `openpyxl`
-- **Architecture:** Asynchronous Event-Driven Architecture
-
----
 
 ## 👨‍💻 Author
-**Ardavan Ghal-Eh**  
-Mechanical Engineering Student, Sharif University of Technology  
-*Focus: Python Development, Data Pipelines & Conversational Interfaces*
+**Ardavan Ghal-Eh** | Sharif University of Technology
