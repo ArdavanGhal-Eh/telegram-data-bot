@@ -3,6 +3,7 @@
 <!-- PROJECT SHIELDS -->
 <div align="center">
 
+[![Persian Documentation](https://img.shields.io/badge/مستندات-فارسی-green.svg?style=for-the-badge)](README_FA.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Aiogram Version](https://img.shields.io/badge/Aiogram-v3.x-2CA5E0.svg?style=for-the-badge&logo=telegram&logoColor=white)](https://aiogram.dev/)
