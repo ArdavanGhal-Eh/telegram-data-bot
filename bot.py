@@ -13,137 +13,27 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
-class BotDatabase:
-    """
-    Manages catalog data querying, price drop subscriptions, and logging.
-    """
-
-    def __init__(self, db_path: str = "bot_data.db"):
-        self.db_path = db_path
-        self._ensure_db()
-
-    def _get_connection(self):
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.execute("CREATE TABLE IF NOT EXISTS _probe (id INT)")
-            return conn
-        except sqlite3.OperationalError:
-            self.db_path = os.path.join("/tmp", os.path.basename(self.db_path))
-            return sqlite3.connect(self.db_path)
-
-    def _ensure_db(self):
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS catalog_items (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title TEXT NOT NULL,
-                    category TEXT,
-                    price INTEGER,
-                    seller TEXT,
-                    in_stock BOOLEAN
-                )
-            """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS price_alerts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER,
-                    target_product TEXT,
-                    target_price INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS query_logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER,
-                    command TEXT,
-                    query TEXT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            conn.commit()
-
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM catalog_items")
-            if cursor.fetchone()[0] == 0:
-                sample_data = [
-                    ("لپ‌تاپ ایسوس Vivobook 15", "لپ‌تاپ", 38500000, "دیجی‌کالا", True),
-                    ("مک‌بوک ایر M2 اپل", "لپ‌تاپ", 89000000, "بازرگانی پارس", True),
-                    ("گوشی سامسونگ S24 Ultra", "موبایل", 72000000, "دیجی‌لند", True),
-                    ("گوشی شیائومی Redmi Note 13", "موبایل", 14500000, "دیجی‌کالا", True),
-                    ("هدفون سونی WH-1000XM5", "صوتی", 19500000, "فروشگاه مرکزی", True),
-                    ("ماوس لاجیتک MX Master 3S", "لوازم جانبی", 6200000, "دیجی‌کالا", False)
-                ]
-                cursor.executemany("""
-                    INSERT INTO catalog_items (title, category, price, seller, in_stock)
-                    VALUES (?, ?, ?, ?, ?)
-                """, sample_data)
-                conn.commit()
-
-    def search_items(self, query: str, max_price: Optional[int] = None) -> List[Dict]:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            if max_price:
-                cursor.execute("""
-                    SELECT title, category, price, seller, in_stock 
-                    FROM catalog_items
-                    WHERE (title LIKE ? OR category LIKE ?) AND price <= ?
-                    ORDER BY price ASC
-                """, (f"%{query}%", f"%{query}%", max_price))
-            else:
-                cursor.execute("""
-                    SELECT title, category, price, seller, in_stock 
-                    FROM catalog_items
-                    WHERE title LIKE ? OR category LIKE ?
-                    ORDER BY price ASC
-                """, (f"%{query}%", f"%{query}%"))
-            rows = cursor.fetchall()
-            return [
-                {
-                    "title": r[0],
-                    "category": r[1],
-                    "price": r[2],
-                    "seller": r[3],
-                    "in_stock": bool(r[4])
-                }
-                for r in rows
-            ]
-
-    def add_alert(self, user_id: int, product: str, price: int):
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO price_alerts (user_id, target_product, target_price)
-                VALUES (?, ?, ?)
-            """, (user_id, product, price))
-            conn.commit()
-
-    def get_summary_stats(self) -> Dict:
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*), AVG(price), SUM(in_stock) FROM catalog_items")
-            total, avg_price, in_stock = cursor.fetchone()
-            return {
-                "total_items": total or 0,
-                "avg_price": int(avg_price or 0),
-                "in_stock_items": in_stock or 0
-            }
+from database import BotDatabase
 
 db = BotDatabase()
 
 def parse_natural_query(user_text: str) -> Tuple[str, Optional[int]]:
     """Extracts keyword and budget filter (e.g. 'لپ تاپ زیر 40 میلیون')."""
-    text = user_text.replace("میلیون", "000000").replace("هزار", "000").replace("تومان", "")
-    match = re.search(r"زیر\s*([\d,]+)", text)
+    match = re.search(r"زیر\s*([\d,]+)\s*(میلیون|هزار|تومان)?", user_text)
     max_price = None
     clean_keyword = user_text
     if match:
         num_str = match.group(1).replace(",", "").strip()
+        unit = match.group(2)
         try:
-            max_price = int(num_str)
-            clean_keyword = re.sub(r"زیر\s*([\d,]+|\d+)\s*(میلیون|تومان)?", "", user_text).strip()
+            val = int(num_str)
+            if unit == "میلیون":
+                val *= 1_000_000
+            elif unit == "هزار":
+                val *= 1_000
+            max_price = val
+            clean_keyword = user_text[:match.start()] + user_text[match.end():]
+            clean_keyword = clean_keyword.strip()
         except ValueError:
             pass
     return clean_keyword, max_price
