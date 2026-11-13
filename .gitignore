@@ -16,3 +16,6 @@ dist/
 *.db-wal
 *.db-shm
 *.pdf
+
+# Nightly Hardened Hygiene Rules
+*.key
