@@ -52,14 +52,14 @@ def format_welcome_message() -> str:
 def handle_search(query: str, user_id: int = 12345) -> str:
     if not query.strip():
         return "⚠️ لطفاً نام کالا را وارد کنید. مثال: `/search لپ‌تاپ زیر ۴۰ میلیون`"
-    
+
     clean_q, max_price = parse_natural_query(query.strip())
     results = db.search_items(clean_q, max_price=max_price)
-    
+
     if not results:
         price_clause = f" با بودجه زیر {max_price:,} تومان" if max_price else ""
         return f"❌ موردی برای جستجوی '{clean_q}'{price_clause} یافت نشد."
-    
+
     lines = [f"🔎 **نتایج جستجو برای '{clean_q}':** ({len(results)} مورد یافت شد)\n"]
     for idx, item in enumerate(results, 1):
         stock_badge = "✅ موجود" if item["in_stock"] else "❌ ناموجود"
@@ -100,7 +100,7 @@ def handle_excel_analysis(file_path: str) -> str:
         cols = list(df.columns)
         null_count = df.isnull().sum().sum()
         numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
-        
+
         summary = (
             f"📄 **گزارش جامع ممیزی فایل داده:**\n\n"
             f"• تعداد ردیف‌ها: **{total_rows:,}**\n"
@@ -122,7 +122,7 @@ def run_cli_interactive():
     print("🤖 TELEGRAM BOT SIMULATOR (Advanced Interactive Mode)")
     print("=" * 60)
     print(format_welcome_message())
-    
+
     while True:
         try:
             user_input = input("\nUser > ").strip()
