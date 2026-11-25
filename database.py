@@ -94,7 +94,7 @@ class BotDatabase:
             cursor = conn.cursor()
             if max_price:
                 cursor.execute("""
-                    SELECT title, category, price, seller, in_stock 
+                    SELECT title, category, price, seller, in_stock
                     FROM catalog_items
                     WHERE (title LIKE ? OR category LIKE ?) AND price <= ?
                     ORDER BY price ASC
@@ -102,7 +102,7 @@ class BotDatabase:
                 """, (f"%{query}%", f"%{query}%", max_price, limit, offset))
             else:
                 cursor.execute("""
-                    SELECT title, category, price, seller, in_stock 
+                    SELECT title, category, price, seller, in_stock
                     FROM catalog_items
                     WHERE title LIKE ? OR category LIKE ?
                     ORDER BY price ASC
